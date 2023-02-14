@@ -3,7 +3,6 @@ typedef set<set<int>> scc_t;
 enum msg_code {
     QUERY,
     TASK,
-    CALC_BW,
     TRIM_SOLUTION,
     SOLUTION,
     DISTRIBUTING_TO,
@@ -27,18 +26,9 @@ void free_me() {
     // free me
     int code = FREE_ME;
     MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    // printf("free\n");
 }
-vector<int> get_proc_list(int np) {
-    vector<int> free_procs(np);
-    MPI_Status status;
-    // query free procs list
-    int code = QUERY;
-    MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    // recv list
-    MPI_Recv(&free_procs[0], np, MPI_INT, 0, 1, MPI_COMM_WORLD, &status);
-    // printf("recv list\n");
-    return free_procs;
-}
+
 void Trim(graph &g) {
     bool graph_changed;
     do {
@@ -58,26 +48,6 @@ void Trim(graph &g) {
             }
         }
     } while (graph_changed);
-}
-void send_bw(int procid, set<int> BW) {
-    vector<int> v;
-    v.assign(BW.begin(), BW.end());
-    int size = v.size();
-    MPI_Send(&size, 1, MPI_INT, procid, 0, MPI_COMM_WORLD);
-    MPI_Send(&v[0], size, MPI_INT, procid, 1, MPI_COMM_WORLD);
-    // printf("send to %d\n", procid);
-}
-set<int> recv_bw(int procid) {
-    int size;
-    int *v;
-    MPI_Status status;
-    MPI_Recv(&size, 1, MPI_INT, procid, 0, MPI_COMM_WORLD, &status);
-    v = new int[size];
-    MPI_Recv(v, size, MPI_INT, procid, 1, MPI_COMM_WORLD, &status);
-    set<int> BW(v, v + size);
-    delete v;
-    // printf("recv from %d\n", procid);
-    return BW;
 }
 void send_graph(int code, int procid, graph g) {
     MPI_Send(&code, 1, MPI_INT, procid, 0, MPI_COMM_WORLD);
@@ -148,9 +118,19 @@ void Compute_SCC(graph g) {
             src_procid = status.MPI_SOURCE;
             switch (code) {
                 case QUERY: {
-                    // mpi send free procs
-                    MPI_Send(&free_procs[0], np, MPI_INT, src_procid, 1,
-                             MPI_COMM_WORLD);
+                    // mpi send idle procid from free procs list
+                    auto it = find(free_procs.begin() + 1, free_procs.end(), 0);
+
+                    // If element was found
+                    int index = -1;
+                    if (it != free_procs.end()) {
+                        // calculating the index
+                        // of K
+                        index = it - free_procs.begin();
+                        free_procs[index]++;
+                        num_dist++;
+                    }
+                    MPI_Send(&index, 1, MPI_INT, src_procid, 0, MPI_COMM_WORLD);
                     break;
                 }
                 case TRIM_SOLUTION: {
@@ -171,34 +151,13 @@ void Compute_SCC(graph g) {
                     MPI_Recv(&count, 1, MPI_INT, src_procid, 1, MPI_COMM_WORLD,
                              &status);
                     int *recv_vec = new int[count];
-                    // printf("got count\n");
+                    printf("got count %d\n", count);
                     MPI_Recv(&recv_vec[0], count, MPI_INT, src_procid, 2,
                              MPI_COMM_WORLD, &status);
                     set<int> solution(recv_vec, recv_vec + count);
                     scc_t temp = {solution};
                     set_union(SCC.begin(), SCC.end(), temp.begin(), temp.end(),
                               inserter(SCC, SCC.begin()));
-                    break;
-                }
-                case DISTRIBUTING_FOR_BW: {
-                    int procid;
-                    MPI_Recv(&procid, 1, MPI_INT, src_procid, 1, MPI_COMM_WORLD,
-                             &status);
-                    free_procs[procid]++;
-                    break;
-                }
-                case DISTRIBUTING_TO: {
-                    // mpi recv procid
-                    int procid;
-                    for (int i = 0; i < 3; i++) {
-                        MPI_Recv(&procid, 1, MPI_INT, src_procid, 1,
-                                 MPI_COMM_WORLD, &status);
-                        if (procid > 0) {
-                            free_procs[procid]++;
-                            num_dist++;
-                            // printf("added to %d\n", procid);
-                        }
-                    }
                     break;
                 }
                 case FREE_ME: {
@@ -231,67 +190,53 @@ void Compute_SCC(graph g) {
         printf("The iteration time = %ld secs.\n", seconds);
 
     } else {
+        queue<graph> pending_q;
         while (1) {
-            int code = -1;
-            MPI_Status status;
-            int src_procid;
-            MPI_Recv(&code, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD,
-                     &status);
-            src_procid = status.MPI_SOURCE;
-            // printf("slave : recv %d %d\n", src_procid, my_rank);
-            if (code == KILL && src_procid == 0) {
-                // printf("slave kill %d\n", my_rank);
-                break;
+            graph g;
+            if (pending_q.empty()) {
+                int code = -1;
+                MPI_Status status;
+                int src_procid;
+                MPI_Recv(&code, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD,
+                         &status);
+                src_procid = status.MPI_SOURCE;
+                // printf("slave : recv %d %d\n", src_procid, my_rank);
+                if (code == KILL && src_procid == 0) {
+                    // printf("slave kill %d\n", my_rank);
+                    break;
+                }
+                // recv graph g
+                g = recv_graph(src_procid);
+                // printf("graph recv from %d\n", src_procid);
+            } else {
+                printf("using self queue\n");
+                g = pending_q.front();
+                pending_q.pop();
             }
-            // recv graph g
-            graph g = recv_graph(src_procid);
-            if (code == CALC_BW) {
-                set<int> BW = g.BW();
-                send_bw(src_procid, BW);
-                free_me();
-                continue;
-            }
-            // printf("graph recv from %d\n", src_procid);
             if (!g.num_nodes()) {
                 // send free me
-                code = FREE_ME;
-                MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                free_me();
                 continue;
             }
             Trim(g);
             if (!g.num_nodes()) {
                 // send free me
-                code = FREE_ME;
-                MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                free_me();
                 continue;
             }
-            vector<int> free_procs;
-            free_procs = get_proc_list(np);
-            code = DISTRIBUTING_FOR_BW;
-            MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-            int dst_procid =
-                distance(free_procs.begin(),
-                         min_element(free_procs.begin() + 1, free_procs.end()));
-            MPI_Send(&dst_procid, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-
-            send_graph(CALC_BW, dst_procid, g);
             set<int> FW = g.FW();
-            set<int> BW = recv_bw(dst_procid);
+            set<int> BW = g.BW();
             vector<int> S;  // intersection FW, BW
             set_intersection(FW.begin(), FW.end(), BW.begin(), BW.end(),
                              inserter(S, S.begin()));
             // send solution S to proc0
-            // printf("calc soln\n");
-            code = SOLUTION;
+            int code = SOLUTION;
             MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
             int size = S.size();
             MPI_Send(&size, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
             MPI_Send(&S[0], size, MPI_INT, 0, 2, MPI_COMM_WORLD);
 
-            free_procs = get_proc_list(np);
-
-            code = DISTRIBUTING_TO;
-            MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            int dst_procid;
 
             graph fw = g, bw = g, s = g;
             for (auto i : fw.getNodes()) {
@@ -303,44 +248,43 @@ void Compute_SCC(graph g) {
 
             int temp = 0;
             // send fw-SCS
-            dst_procid =
-                distance(free_procs.begin(),
-                         min_element(free_procs.begin() + 1, free_procs.end()));
             graph FW_S = fw;
             for (auto i = S.begin(); i != S.end(); i++) {
                 FW_S.removeNode(*i);
             }
             if (FW_S.num_nodes() > 0) {
-                // printf("FW - S : %d\n", FW_S.num_nodes());
-                free_procs[dst_procid]++;
-                send_graph(TASK, dst_procid, FW_S);
-                // update free proc
-                MPI_Send(&dst_procid, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-            } else {
-                MPI_Send(&temp, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+                printf("FW - S : %d\n", FW_S.num_nodes());
+                code = QUERY;
+                MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                MPI_Status status;
+                MPI_Recv(&dst_procid, 1, MPI_INT, 0, 0, MPI_COMM_WORLD,
+                         &status);
+
+                if (dst_procid > 0)
+                    send_graph(TASK, dst_procid, FW_S);
+                else
+                    pending_q.push(FW_S);
             }
 
             // send bw-SCC
-            dst_procid =
-                distance(free_procs.begin(),
-                         min_element(free_procs.begin() + 1, free_procs.end()));
             graph BW_S = bw;
             for (auto i = S.begin(); i != S.end(); i++) {
                 BW_S.removeNode(*i);
             }
             if (BW_S.num_nodes() > 0) {
-                free_procs[dst_procid]++;
-                send_graph(TASK, dst_procid, g);
-                // update free proc
-                MPI_Send(&dst_procid, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-            } else {
-                MPI_Send(&temp, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+                code = QUERY;
+                MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                MPI_Status status;
+                MPI_Recv(&dst_procid, 1, MPI_INT, 0, 0, MPI_COMM_WORLD,
+                         &status);
+
+                if (dst_procid > 0)
+                    send_graph(TASK, dst_procid, BW_S);
+                else
+                    pending_q.push(BW_S);
             }
 
             // send g-(fw | bw)
-            dst_procid =
-                distance(free_procs.begin(),
-                         min_element(free_procs.begin() + 1, free_procs.end()));
             graph G_FW_BW = g;
             for (auto i = FW.begin(); i != FW.end(); i++) {
                 G_FW_BW.removeNode(*i);
@@ -349,14 +293,18 @@ void Compute_SCC(graph g) {
                 G_FW_BW.removeNode(*i);
             }
             if (G_FW_BW.num_nodes() > 0) {
-                free_procs[dst_procid]++;
-                send_graph(TASK, dst_procid, g);
-                // update free proc
-                MPI_Send(&dst_procid, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-            } else {
-                MPI_Send(&temp, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+                code = QUERY;
+                MPI_Send(&code, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                MPI_Status status;
+                MPI_Recv(&dst_procid, 1, MPI_INT, 0, 0, MPI_COMM_WORLD,
+                         &status);
+
+                if (dst_procid > 0)
+                    send_graph(TASK, dst_procid, G_FW_BW);
+                else
+                    pending_q.push(G_FW_BW);
             }
-            free_me();
+            if (pending_q.empty()) free_me();
         }
     }
     MPI_Finalize();

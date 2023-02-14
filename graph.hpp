@@ -32,6 +32,7 @@ public:
         edgesTotal = 0;
     }
 
+    graph() {}
     graph(int num_edges, edge* edgelist) {
         edgesTotal = num_edges;
         edgeList = edgelist;
