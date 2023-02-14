@@ -1,5 +1,6 @@
 #!/bin/bash
 
+data=("clean-soc-pokec-relationships.txt"  "GermanyRoadud.txt" "clean-soc-sinaweibo.txt" "USAud.txt" "clean-soc-twitter.txt")
 if [ -z "$1" ]
 then
     lines=20000
@@ -7,6 +8,11 @@ else
     lines=$1
 fi
 
-head -n $lines ./data/clean-soc-pokec-relationships.txt > ./data/simple${lines}.txt
 mpic++ main.cc
-mpirun --use-hwthread-cpus -c 8 a.out ./data/simple${lines}.txt 8
+
+for graph in ${data[@]}
+do
+    echo "Starting ${graph//\.txt/}"
+    head -n $lines ./data/$graph > ./data/${graph//\.txt/}$lines.txt
+    mpirun --use-hwthread-cpus -c 8 a.out ./data/${graph//\.txt/}${lines}.txt 8
+done

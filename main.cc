@@ -99,7 +99,7 @@ void Compute_SCC(graph g) {
         seconds = (end1.tv_sec - start1.tv_sec);
         micros = ((seconds * 1000000) + end1.tv_usec) - (start1.tv_usec);
         if (my_rank == 0) {
-            printf("The graph loading time = %ld secs.\n", seconds);
+            printf("The graph loading time = %ld secs(%ld micors).\n", seconds, micros);
         }
         printf("parse complete\n");
         vector<int> free_procs(np);
