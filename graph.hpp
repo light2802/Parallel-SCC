@@ -19,28 +19,31 @@ class graph {
 private:
     int original_nodesTotal;
     int edgesTotal;
-
+    std::vector<edge> edgeList;
     char* filePath;
     std::set<int> nodes;
     std::map<int, std::vector<edge>> edges;
 
 public:
-    edge* edgeList;
     graph(char* file, int n) {
         filePath = file;
         original_nodesTotal = 0;
         edgesTotal = 0;
     }
 
-    graph() {}
+    graph() {
+        edgesTotal = 0;
+        original_nodesTotal = 0;
+    }
+
     graph(int num_edges, edge* edgelist) {
         edgesTotal = num_edges;
-        edgeList = edgelist;
 
         for (int i = 0; i < num_edges; i++) {
-            edges[edgeList[i].source].push_back(edgeList[i]);
-            nodes.insert(edgeList[i].source);
-            nodes.insert(edgeList[i].destination);
+            edges[edgelist[i].source].push_back(edgelist[i]);
+            nodes.insert(edgelist[i].source);
+            nodes.insert(edgelist[i].destination);
+            edgeList.push_back(edgelist[i]);
             // printf("adding nodes %d %d\n", edgeList[i].source,
             // edgeList[i].destination);
         }
@@ -49,12 +52,17 @@ public:
 
     std::map<int, std::vector<edge>> getEdges() { return edges; }
     std::set<int> getNodes() { return nodes; }
-    edge* getEdgeList() { return edgeList; }
+    std::vector<edge> getEdgeList() { return edgeList; }
     int num_nodes() { return original_nodesTotal; }
     int num_edges() { return edgesTotal; }
 
     void removeNode(int v) {
         if (!original_nodesTotal) return;
+        for(std::vector<edge>::iterator iter = edgeList.begin(); iter < edgeList.end(); iter++)
+        {
+            if(iter->source == v || iter->destination == v)
+                edgeList.erase(iter);
+        }
         edgesTotal -= edges[v].size();
         edges.erase(v);
         nodes.erase(v);
@@ -73,19 +81,6 @@ public:
         original_nodesTotal--;
         // printf("Removed node %d\n", v);
 
-        edgeList = new edge[edgesTotal];
-
-        int edge_no = 0;
-        for (auto i : nodes) {
-            std::vector<edge> edgeofVertex = edges[i];
-            std::vector<edge>::iterator itr;
-            for (itr = edgeofVertex.begin(); itr != edgeofVertex.end(); itr++) {
-                edgeList[edge_no] = (*itr);
-                // printf("dbg nodes %d %d\n", (*itr).source,
-                // (*itr).destination);
-                edge_no++;
-            }
-        }
     }
 
     std::set<int> FW() {
@@ -197,20 +192,9 @@ public:
                 nodes.insert(source);
                 nodes.insert(destination);
                 edges[source].push_back(e);
+                edgeList.push_back(e);
             }
         }
         original_nodesTotal = nodes.size();
-
-        edgeList = new edge[edgesTotal];
-
-        int edge_no = 0;
-        for (auto i : nodes) {
-            std::vector<edge> edgeofVertex = edges[i];
-            std::vector<edge>::iterator itr;
-            for (itr = edgeofVertex.begin(); itr != edgeofVertex.end(); itr++) {
-                edgeList[edge_no] = (*itr);
-                edge_no++;
-            }
-        }
     }
 };

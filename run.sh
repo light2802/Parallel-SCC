@@ -3,7 +3,7 @@
 data=("clean-soc-pokec-relationships.txt"  "GermanyRoadud.txt" "clean-soc-sinaweibo.txt" "USAud.txt" "clean-soc-twitter.txt")
 if [ -z "$1" ]
 then
-    lines=20000
+    lines=2000
 else
     lines=$1
 fi

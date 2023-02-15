@@ -54,12 +54,12 @@ void send_graph(int code, int procid, graph g) {
     int num_edges = g.num_edges();
     // printf("edges %d\n", num_edges);
     // int *indexofNodes = g.getIndexofNodes();
-    edge *edgelist = g.getEdgeList();
+    vector<edge> edgelist = g.getEdgeList();
     // int *edgelen = g.getEdgeLen();
     MPI_Send(&num_edges, 1, MPI_INT, procid, 1, MPI_COMM_WORLD);
     MPI_Datatype structtype;
     defineStruct(&structtype);
-    MPI_Send(edgelist, num_edges, structtype, procid, 2, MPI_COMM_WORLD);
+    MPI_Send(&edgelist[0], num_edges, structtype, procid, 2, MPI_COMM_WORLD);
     // printf("graph sent to procid %d\n", procid);
 }
 
@@ -98,6 +98,7 @@ void Compute_SCC(graph g) {
         gettimeofday(&end1, NULL);
         seconds = (end1.tv_sec - start1.tv_sec);
         micros = ((seconds * 1000000) + end1.tv_usec) - (start1.tv_usec);
+        printf("Number of nodes %d\nNumber of Edges %d\n", g.num_nodes(), g.num_edges());
         if (my_rank == 0) {
             printf("The graph loading time = %ld secs(%ld micors).\n", seconds, micros);
         }
@@ -151,7 +152,7 @@ void Compute_SCC(graph g) {
                     MPI_Recv(&count, 1, MPI_INT, src_procid, 1, MPI_COMM_WORLD,
                              &status);
                     int *recv_vec = new int[count];
-                    printf("got count %d\n", count);
+                    //printf("got count %d\n", count);
                     MPI_Recv(&recv_vec[0], count, MPI_INT, src_procid, 2,
                              MPI_COMM_WORLD, &status);
                     set<int> solution(recv_vec, recv_vec + count);
@@ -178,13 +179,17 @@ void Compute_SCC(graph g) {
             int code = KILL;
             MPI_Send(&code, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
         }
-        cout << "SCC found : " << endl;
+        cout << "SCC found : "  << SCC.size() << endl;
+        int max=0;
         for (auto it = SCC.begin(); it != SCC.end(); it++) {
+            if(it->size() > max)
+                max = it->size();
             for (auto item = it->begin(); item != it->end(); item++) {
                 cout << " " << *item;
             }
             cout << endl;
         }
+        printf("Max SCC size %d\n", max);
         printf("The number of times graph dist taken %d \n", num_dist);
         printf("The iteration time = %ld micro secs.\n", micros);
         printf("The iteration time = %ld secs.\n", seconds);
